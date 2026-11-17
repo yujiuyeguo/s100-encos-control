@@ -2,6 +2,92 @@
 
 独立的 ROS 2 / C++17 工作空间。参考 `ieTDZK-T001` 的硬件与 bringup 分层，先建立 S100 原生 CAN 通信与 ENCOS 协议基础，不依赖或修改原项目。
 
+## 开发前准备：硬件、系统与固件
+
+本仓库默认使用 mock。按用途准备环境：
+
+| 用途 | 硬件 | 软件 / 固件 |
+| --- | --- | --- |
+| 离线开发、协议与 mock 测试 | Linux 开发电脑，无需 S100 或电机 | C++17、CMake、ROS 2、colcon；不需要厂商 SDK 或 MCU 固件 |
+| CAN5 ↔ CAN6 物理互测 | RDK S100、MCU 扩展板及连接线 | 板端匹配的系统 / SDK、MCU1 ELF；官方例程不需要 ROS 2 |
+| ENCOS ID、力矩与频率现场工具 | 上述板卡，加一台独立供电的 ENCOS 电机 | 同上；`ws/tools/field/*.sh` 不需要 ROS 2 |
+| ROS 2 CANHAL 后端开发 | 上述硬件 | 另需板端 ROS 2 / ament / colcon；完整板端 ROS 节点运行尚未验收 |
+
+### 硬件清单与已验证接法
+
+| 硬件 | 本项目使用与要求 |
+| --- | --- |
+| 主板 | **D-Robotics RDK S100 V1P1**；使用适配主板的供电和可登录的 Linux 系统 |
+| CAN 扩展 | **官方 S100 MCU 扩展板**，通过配套 FPC 连接；MAIN 接主板 J23，SUB 接扩展板 J1 |
+| 电机 | 本次实机型号 **EC-A6408-P2-25**（也写作 `EC_A6408_P2_25`），已查询确认本台 ID=1；其他型号参数虽有编码支持，不等于已逐一实机验证 |
+| 电机供电 | 独立电源，电压 / 电流容量按电机铭牌和产品手册；CAN 信号线不为电机供电，扩展板也不提供电机功率电源 |
+| 总线与端接 | H↔H、L↔L，优先双绞线；总线两个末端各120Ω。CAN5 对应 **J2**，终端跳帽 **J3**；电机端终端电阻需另行确认 |
+| 开发连接 | 电脑与 S100 的网络 / SSH 连接；本机 `tdzk@woker` 与板端 `sunrise@ubuntu` 是两个环境，真机工具在板端运行 |
+| 可选设备 | USB-CAN 分析仪、示波器用于独立验证物理出帧时间；本项目原生 CAN 通信不要求另购 USB-CAN |
+
+电机测试使用**经典 CAN、标准数据帧、1Mbps**；电机与 MCU 必须使用一致通信参数。波特率由 MCU 配置决定，仓库 JSON 只定义 IPC 映射，不配置 CAN 位速率。ENCOS 参数 / 命令依据随仓库提供的[调试技术手册 V1.16](ws/docs/ENCOS+调试技术手册+V1.16.pdf)。参考地、只有 H/L 的接口及互测接线见下方 Quick Start。
+
+### 已验证的软件与固件组合
+
+下表是本项目的复现基线，不代表其他版本不能使用。更换系统镜像或 MCU SDK 后，应重新核对接口、IPC 映射、固件与同步行为。
+
+| 层级 | 已验证版本 / 文件 | 作用与边界 |
+| --- | --- | --- |
+| S100 Linux 系统 | **4.0.5-Beta / RDKS100-V4.0.5_20260507**，aarch64；内核 `6.1.158-rt58-DR-4.0.5-2605072025-g7bb74b-gd7fa6f`、PREEMPT_RT | 提供 IPC 驱动、RTC/PHC 与厂商库；只克隆仓库不会安装系统镜像 |
+| MCU0 / 主板已有固件 | 本次读取到 `GccReleaseLiteSIP_V2.0`，构建 `Feb 11 2026 15:42:54` | 作为已验证环境记录；本仓库不要求重新刷写 MCU0 |
+| **MCU1 固件** | 同一 **4.0.5_20260507** 发布包内 `debug/S100_MCU_SIP_V2.0/S100_MCU_DEBUG.elf` | 提供 MCU CAN 收发、IPC 转发、IpcBox 与时间同步服务；仓库不包含该二进制，需单独下载 |
+| MCU1 运行版本 | `GccDebugLiteSIP_V2.0`，构建 `Mar 3 2026 15:11:48` | 包版本日期与 ELF 内部构建日期不同，以来源和 SHA256 一起核对 |
+| MCU1 板端安装文件 | `/lib/firmware/S100_MCU_DEBUG_4.0.5_20260507.elf` | 从官方 ELF 复制并加版本后缀；通过 remoteproc 运行时加载，未刷写 MCU_a / MCU_b Flash，未配置开机自启 |
+| Linux 厂商 SDK | `/usr/hobot/include`、`/usr/hobot/lib`；本次 `libhbcanhal.so.1.0.0`、`libhbipcfhal.so.1.1.0` | 来自配套板端系统 / SDK，不由普通 ROS 包或本仓库提供；时间同步还依赖 `libhbtimesynchal`、`libalog` |
+| ENCOS 电机自身固件 | **未读取具体版本，未刷写** | 与 S100 MCU1 ELF 是不同固件；目前只确认本台电机对本项目所用命令有应答。手册 V1.16 是协议文档版本，不是本台电机固件版本 |
+| 离线 ROS 开发 | 本机已验证 **ROS 2 Jazzy / GCC 13**，C++17，CMake≥3.16 | ROS 依赖包括 `ament_cmake`、`rclcpp`、`sensor_msgs`、`launch`、`launch_ros`、`ament_index_python` 和 colcon；其他发行版与完整板端 ROS 运行未验收 |
+
+CANHAL 后端需要 `/usr/hobot/include/canhal/hobot_can_hal.h`、`libhbcanhal.so`；同步工具还需要 `hb_ipcf_hal.h`、`hobot_clock_hal.h` 和 `/app/timesync_demo/sample_timesync/` 的厂商示例。板端设备应有 `/dev/ipcdrv`、`/dev/hrtc0`、`/dev/ptp0`，以及 `/sys/class/remoteproc/remoteproc_mcu0` / `remoteproc_mcu1`。`/dev/ipcdrv` 的权限及实时调度需要 sudo；频率测试默认的 CPU5/FIFO40 配置按本板0～5在线CPU验证。
+
+### 首次克隆与准备工具链
+
+以下在 **S100 的 sunrise SSH 终端**执行；只准备文件 / 编译环境，不启动 MCU 或发帧：
+
+```bash
+git clone https://github.com/yujiuyeguo/s100-encos-control.git
+cd ~/s100-encos-control
+sudo apt-get update
+sudo apt-get install --no-install-recommends build-essential python3 git curl unzip patch
+```
+
+已有项目时直接进入目录即可。离线 ROS 构建按下方“本机构建与离线运行”执行；现场工具无需安装 ROS 2。新环境需要补装配套厂商 SDK 时，应使用同版本 S100 官方系统 / SDK，不能用 SocketCAN 的 `can0` 配置命令代替 CANHAL / IPC。
+
+### 首次下载、校验并安装 MCU1 ELF
+
+[官方 4.0.5_20260507 预编译包](https://archive.d-robotics.cc/downloads/os_images/rdk_s100/RDKS100-V4.0.5_20260507/RDK_MCU_SDK/board_support_package/firmwares/mcu1-product.zip)包含 debug / release ELF 和其他二进制；本项目只使用下面指定的 **debug ELF**。无需自行编译整个 MCU SDK，也不使用包内 RAW / SIP `.bin` 文件进行刷写。
+
+在 S100 的项目根目录下载并仅解出所需文件：
+
+```bash
+cd ~/s100-encos-control
+firmware_dir=build/vendor/mcu-4.0.5
+mkdir -p "$firmware_dir/prebuilt"
+curl --fail --location   'https://archive.d-robotics.cc/downloads/os_images/rdk_s100/RDKS100-V4.0.5_20260507/RDK_MCU_SDK/board_support_package/firmwares/mcu1-product.zip'   --output "$firmware_dir/mcu1-product.zip"
+unzip -o "$firmware_dir/mcu1-product.zip"   'debug/S100_MCU_SIP_V2.0/S100_MCU_DEBUG.elf' -d "$firmware_dir/prebuilt"
+echo '500e6d1b619d0e4393916b4a9b019df08fa26da191668147d2af7681de0ff5de  build/vendor/mcu-4.0.5/prebuilt/debug/S100_MCU_SIP_V2.0/S100_MCU_DEBUG.elf' | sha256sum -c -
+```
+
+**仅当校验输出 `OK`，且需要首次安装时**，将文件复制到 Linux 固件目录；已有同名且校验正确的文件可跳过。此操作只安装文件，不自动加载 MCU：
+
+```bash
+sudo install -m 0644   build/vendor/mcu-4.0.5/prebuilt/debug/S100_MCU_SIP_V2.0/S100_MCU_DEBUG.elf   /lib/firmware/S100_MCU_DEBUG_4.0.5_20260507.elf
+echo '500e6d1b619d0e4393916b4a9b019df08fa26da191668147d2af7681de0ff5de  /lib/firmware/S100_MCU_DEBUG_4.0.5_20260507.elf' | sha256sum -c -
+```
+
+`build/`、`install/`、`log/` 已由 Git 忽略，因此换电脑 / 新克隆不会带上已下载的 ELF、SDK 或历史构建结果。**S100 MCU1 ELF 不会更新 ENCOS 电机固件**。来源、校验和实际启动证据见 [MCU1 启动记录](ws/docs/MCU_BRINGUP_20261116.md)；需要研究或修改 MCU 端时，可另取[同版本 MCU 社区源码](https://archive.d-robotics.cc/downloads/os_images/rdk_s100/RDKS100-V4.0.5_20260507/RDK_MCU_SDK/board_support_package/mcu-community.tar.gz)，它不是 Linux 现场工具编译的必需项。
+
+### 首次真机启动顺序
+
+1. 按下方 Quick Start 第2步确认版本、校验文件，再按需运行时启动 MCU1；已经 `running` / `alive` 则跳过启动，不重复 start。
+2. 按“时间同步”一节编译同步工具；**每次全新 MCU1 启动后仅初始化一次**，另一个终端持续运行 Linux 同步进程。仅重启 Linux 同步程序时不再初始化 MCU。本版重复初始化缺陷及运行时恢复见 [同步修复记录](ws/docs/TIMESYNC_FIX_20261116.md)。
+3. 按用途执行 `encos_id.sh --prepare`、`encos_jog.sh --prepare` 或 `encos_rate.sh --prepare`；这些步骤只编译。没有准备阶段的二进制时，新克隆需要重新编译。
+4. 接电机时使用 [ID 查询与设置](ws/docs/ENCOS_ID_QUICKSTART.md)、[力矩测试](ws/docs/ENCOS_TORQUE_JOG.md)或[零力矩频率测试](ws/docs/ENCOS_TIMING_TUNING_20261117.md)的对应步骤；CAN5↔CAN6互测则按下方 Quick Start，互测时不接电机。现场工具只有显式 `--hardware` 才接触总线；ROS 节点默认 mock。
+
 ## Quick Start：手动启动与 CAN5 ↔ CAN6 互测
 
 适用：RDK S100 V1P1、官方 MCU 扩展板、系统 4.0.5-Beta / 4.0.5_20260507。除 SSH 登录外，本节命令均在板端 `sunrise` 终端执行。这里测试两个 CAN 接口之间的物理链路，不需要 ROS 2，也不连接电机。
@@ -304,6 +390,6 @@ CANHAL 头文件 `/usr/hobot/include/canhal/hobot_can_hal.h`，库 `/usr/hobot/l
 - `s100_can::Transport`：经典标准 CAN，统一 host-order ID。mock 可注入 RX 用于测试，CANHAL 会按物理通道筛选 RX。
 - `encos_motors`：七个型号参数、MIT 命令编码、完整 MIT 反馈解码及抱闸状态查询编码。KD 按原项目为 9 bit；超范围或非有限命令直接拒绝。未实现设零、Flash、清故障或抱闸动作。
 - `s100_robot_hardware`：单电机通信骨架，有反馈时发布 `sensor_msgs/JointState`；CANHAL 模式不发帧。
-- 下一阶段：MCU1 已完成启动验证，先完成物理互发和总线速率/帧格式核对，再做单电机通信验证；之后添加独立通信线程、多电机配置、ros2_control SystemInterface、controller_manager 与控制器。现阶段未迁移 RL、IMU、URDF 和原机器人的安全系统。
+- 下一阶段：MCU1启动、CAN5/CAN6互发、单电机ID查询、短时力矩及零力矩频率测试已完成，范围以对应报告为准。后续接入控制线程与通信worker、多电机配置、ros2_control SystemInterface、controller_manager及控制器；现阶段未迁移RL、IMU、URDF和原机器人的安全系统。
 
 参考：[官方 CAN 文档](https://developer.d-robotics.cc/rdk_s_doc/Advanced_development/mcu_development/mcu_can)、[MCU 启动说明](https://developer.d-robotics.cc/rdk_s_doc/Advanced_development/mcu_development/basic_information)。当前实现依据本机会话中已读取的板端头文件、示例及原项目协议代码。
