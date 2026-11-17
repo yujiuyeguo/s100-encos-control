@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>s100_robot_hardware</name>
+  <version>0.1.0</version>
+  <description>Offline and passive hardware communication foundation.</description>
+  <maintainer email="maintainer@example.com">Project maintainer</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>encos_motors</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

@@ -1,0 +1,31 @@
+--- a/timesync_sample.c
++++ b/timesync_sample.c
+@@ -536,6 +536,16 @@
+             goto exit5;
+         }
+         pr_info("ptp%d snapshot: sec = %ld, nsec = %ld\n", ptp_id, phc_ts.tv_sec, phc_ts.tv_nsec);
++        if (phc_ts.tv_sec <= 0 || phc_ts.tv_nsec < 0 || phc_ts.tv_nsec >= 1000000000L) {
++            pr_warn("Skip invalid PHC snapshot; re-arm capture, no synchronization packet sent\n");
++            ret = timesyncSetClockSnapshotSource(&phc_clock, (enum timesyncSnapshotSource)pps_source);
++            if (ret < 0) {
++                pr_err("Re-arm PHC snapshot source failed ret=%d\n", ret);
++                goto exit5;
++            }
++            continue;
++        }
++
+ 
+         if(GPSTimeSource) {
+             memset(&gps_ts, 0, sizeof(gps_ts));
+@@ -581,7 +591,10 @@
+             if (ret >= 0) {
+                 pr_info("Timesync Info: timesync ipc send data succeed\n");
+             } else {
+-                pr_err("Timesync Info: timesync ipc send data failed\n");
++                pr_err("Timesync Info: timesync ipc send data failed ret=%d\n", ret);
++                if (ret == -14) {
++                    pr_err("MCU timesync IPC is not ready. Initialize once after a fresh MCU1 start; do not repeat initialization.\n");
++                }
+                 goto exit5;
+             }
+             continue;

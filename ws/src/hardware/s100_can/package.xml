@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>s100_can</name>
+  <version>0.1.0</version>
+  <description>Classic CAN transport with offline mock and optional S100 CANHAL backend.</description>
+  <maintainer email="maintainer@example.com">Project maintainer</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export><build_type>ament_cmake</build_type></export>
+</package>

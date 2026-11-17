@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>s100_bringup</name>
+  <version>0.1.0</version>
+  <description>Offline bringup and S100 CANHAL configuration templates.</description>
+  <maintainer email="maintainer@example.com">Project maintainer</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>s100_robot_hardware</depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>ament_index_python</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

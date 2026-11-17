@@ -1,0 +1,11 @@
+/**:
+  ros__parameters:
+    backend: mock
+    physical_channel: 5
+    can_target: can5
+    motor_id: 1
+    motor_model: EC-A4310-P2-36
+    joint_name: test_joint
+    update_rate: 250.0
+    mock_query_enabled: true
+    max_cycles: 0
